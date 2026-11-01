@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Launch FreqUI (the Freqtrade web interface) in the audited, digest-pinned sandbox.
+#
+#   ./ft-ui              -> webserver mode: backtest, plot, browse results (no trading)
+#   ./ft-ui trade        -> dry-run trading mode, live UI with the bot running
+#
+# The port is published to 127.0.0.1 ONLY, so nothing else on your network can reach it.
+# Credentials live in user_data/config.json under api_server.
+
+set -euo pipefail
+
+IMAGE="docker.io/freqtradeorg/freqtrade@sha256:d59109a487ddac94e41ffe55af49f61f500ba621cc88b95180bfdc809cf97c6f"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG="/freqtrade/user_data/config.json"
+MODE="${1:-webserver}"
+
+if [ "$MODE" != "webserver" ] && [ "$MODE" != "trade" ]; then
+    echo "usage: ./ft-ui [webserver|trade]"
+    exit 1
+fi
+
+# Refuse to start in trade mode unless dry_run is on.
+if [ "$MODE" = "trade" ]; then
+    dry=$(python3 -c "import json;print(json.load(open('$HERE/user_data/config.json'))['dry_run'])")
+    if [ "$dry" != "True" ]; then
+        echo "REFUSING TO START: dry_run is $dry in config.json."
+        echo "This script only runs in dry-run. Set dry_run back to true, or start live trading deliberately by hand."
+        exit 1
+    fi
+    echo "dry-run confirmed: paper money only"
+fi
+
+echo "FreqUI  -> http://127.0.0.1:8080"
+echo "user    -> $(python3 -c "import json;print(json.load(open('$HERE/user_data/config.json'))['api_server']['username'])")"
+echo "mode    -> $MODE   (ctrl-c to stop)"
+echo
+
+exec podman run --rm -it \
+    -v "$HERE/user_data:/freqtrade/user_data:Z" \
+    -p 127.0.0.1:8080:8080 \
+    "$IMAGE" "$MODE" --config "$CONFIG"

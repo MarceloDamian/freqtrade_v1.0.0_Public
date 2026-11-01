@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Freqtrade wrapper — runs the audited, digest-pinned image in a rootless Podman sandbox.
+# Baseline and audit notes: SECURITY-BASELINE.md
+#
+# Usage:  ./ft backtesting --strategy SampleStrategy --timeframe 1h
+#         ./ft lookahead-analysis --strategy SampleStrategy
+#         ./ft list-freqaimodels
+#
+# The --config flag is added automatically; pass your own to override.
+
+set -euo pipefail
+
+IMAGE="docker.io/freqtradeorg/freqtrade@sha256:d59109a487ddac94e41ffe55af49f61f500ba621cc88b95180bfdc809cf97c6f"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG="/freqtrade/user_data/config.json"
+
+if [ $# -eq 0 ]; then
+    echo "usage: ./ft <freqtrade-command> [args...]"
+    echo "try:   ./ft list-strategies"
+    exit 1
+fi
+
+# Verify the local image still matches the audited digest.
+if ! podman image exists "$IMAGE"; then
+    echo "Pinned image not present locally. Pulling the audited digest..."
+    podman pull "$IMAGE"
+fi
+
+# Append --config unless the caller supplied one.
+args=("$@")
+for a in "$@"; do
+    if [ "$a" = "--config" ] || [ "$a" = "-c" ]; then
+        exec podman run --rm -v "$HERE/user_data:/freqtrade/user_data:Z" "$IMAGE" "${args[@]}"
+    fi
+done
+
+exec podman run --rm -v "$HERE/user_data:/freqtrade/user_data:Z" "$IMAGE" "${args[@]}" --config "$CONFIG"
